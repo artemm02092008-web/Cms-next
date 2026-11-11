@@ -1,78 +1,214 @@
-'use client';
+"use client";
 
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay, FreeMode } from 'swiper/modules';
-import 'swiper/css';
-import 'swiper/css/free-mode';
+import { useEffect, useState } from "react";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Autoplay } from "swiper/modules";
+import "swiper/css";
+import { fetchBanners } from "@/lib/strapi";
+import QuickViewModal from "./QuickViewModal";
+
+interface BannerItem {
+  image: string;
+  game: any;
+}
 
 export default function SwiperBanner() {
-  const topImages = [
-    "/img/witcher.svg", "/img/Rectangle 56 (1).svg", "/img/starcraft.svg",
-    "/img/dragonAge.svg", "/img/Rectangle 61 (1).svg", "/img/Rectangle 59.svg",
-    "/img/Rectangle 62.svg", "/img/Rectangle 60.svg", "/img/Rectangle 64.svg",
-    "/img/Rectangle 63.svg"
-  ];
+  const [mounted, setMounted] = useState(false);
+  const [topItems, setTopItems] = useState<BannerItem[]>([]);
+  const [bottomItems, setBottomItems] = useState<BannerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
 
-  const bottomImages = [
-    "/img/Rectangle 66.svg", "/img/Rectangle 65.svg", "/img/Rectangle 67.svg",
-    "/img/Rectangle 68.svg", "/img/Rectangle 69.svg", "/img/Rectangle 70.svg",
-    "/img/Rectangle 71.svg", "/img/Rectangle 72.svg", "/img/Rectangle 73.svg",
-    "/img/Rectangle 80.svg"
-  ];
+  useEffect(() => {
+    setMounted(true);
+
+    fetchBanners()
+      .then((data) => {
+        if (data && data.length > 0) {
+          const sorted = data.sort(
+            (a: any, b: any) => (a.Order || 0) - (b.Order || 0)
+          );
+
+          const mapToItem = (b: any): BannerItem => {
+            const url = b?.Image?.url || b?.Image?.[0]?.url;
+            return {
+              image: url ? `http://127.0.0.1:1337${url}` : "",
+              // ВАЖНО: поле называется "game" (с маленькой буквы), как вы его создали в Strapi
+              game: b.game || null,
+            };
+          };
+
+          const top = sorted
+            .filter((b: any) => b.IsTop === true)
+            .map(mapToItem)
+            .filter((i) => i.image);
+          const bottom = sorted
+            .filter((b: any) => b.IsTop === false)
+            .map(mapToItem)
+            .filter((i) => i.image);
+
+          setTopItems(top);
+          setBottomItems(bottom);
+        }
+      })
+      .catch((err) => console.error("[banners] Ошибка загрузки:", err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (!mounted || loading) {
+    return (
+      <div style={{ marginBottom: "40px", width: "100%" }}>
+        <div
+          style={{
+            height: "140px",
+            background: "#1a1a1a",
+            borderRadius: "10px",
+            marginBottom: "20px",
+          }}
+        />
+        <div
+          style={{
+            height: "140px",
+            background: "#1a1a1a",
+            borderRadius: "10px",
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (topItems.length === 0 && bottomItems.length === 0) return null;
+
+  const slideStyle = {
+    width: "240px",
+    height: "140px",
+    flexShrink: 0,
+  };
+
+  const handleBannerClick = (item: BannerItem) => {
+    if (!item.game) {
+      console.warn("У этого баннера нет привязанной игры в Strapi");
+      return;
+    }
+
+    // Нормализуем данные игры для QuickViewModal
+    const normalizedGame = {
+      id: item.game.documentId,
+      title: item.game.Title || item.game.title || "Без названия",
+      price: `${item.game.Price ?? 0} ₽`,
+      description:
+        item.game.Description ||
+        item.game.description ||
+        "Описание отсутствует",
+      developer: item.game.developer || "Неизвестно",
+      genre: item.game.Genre || "Не указан",
+      image: item.game.Cover?.url
+        ? `http://127.0.0.1:1337${item.game.Cover.url}`
+        : item.image, // Если у игры нет обложки, используем картинку баннера
+    };
+
+    setSelectedGame(normalizedGame);
+  };
 
   return (
-    <div className="my-swiper-container" style={{ marginBottom: '40px', width: '100%', overflow: 'hidden' }}>
-      
-      {/* Верхний слайдер */}
-      <Swiper
-        modules={[Autoplay, FreeMode]}
-        spaceBetween={20}
-        slidesPerView="auto"
-        loop={true}
-        freeMode={true}
-        speed={4000}
-        autoplay={{ delay: 0, disableOnInteraction: false, reverseDirection: false }}
-        className="swiperTop"
-        style={{ marginBottom: '20px' }}
-      >
-        {topImages.map((img, i) => (
-          <SwiperSlide key={i} style={{ width: '240px', flexShrink: 0 }}>
-            <div style={{ width: '100%', height: '140px', background: '#1a1a1a', borderRadius: '10px', overflow: 'hidden' }}>
-              <img 
-                src={img} 
-                alt={`Slide ${i}`} 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                onError={() => console.log('Ошибка загрузки картинки:', img)}
-              />
-            </div>
-          </SwiperSlide>
-        ))}
-      </Swiper>
+    <>
+      {/* Модальное окно игры */}
+      {selectedGame && (
+        <QuickViewModal
+          gameId={selectedGame.id}
+          product={selectedGame}
+          onClose={() => setSelectedGame(null)}
+        />
+      )}
 
-      {/* Нижний слайдер */}
-      <Swiper
-        modules={[Autoplay, FreeMode]}
-        spaceBetween={20}
-        slidesPerView="auto"
-        loop={true}
-        freeMode={true}
-        speed={4000}
-        autoplay={{ delay: 0, disableOnInteraction: false, reverseDirection: true }}
-        className="swiperBottom"
-      >
-        {bottomImages.map((img, i) => (
-          <SwiperSlide key={i} style={{ width: '240px', flexShrink: 0 }}>
-             <div style={{ width: '100%', height: '140px', background: '#1a1a1a', borderRadius: '10px', overflow: 'hidden' }}>
-              <img 
-                src={img} 
-                alt={`Slide ${i}`} 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                onError={() => console.log('Ошибка загрузки картинки:', img)}
-              />
-            </div>
-          </SwiperSlide>
-        ))}
-      </Swiper>
-    </div>
+      <div style={{ marginBottom: "40px", width: "100%", overflow: "hidden" }}>
+        {/* Верхний слайдер */}
+        {topItems.length > 0 && (
+          <Swiper
+            modules={[Autoplay]}
+            spaceBetween={20}
+            slidesPerView="auto"
+            loop={true}
+            speed={1500}
+            autoplay={{
+              delay: 0,
+              disableOnInteraction: false,
+              pauseOnMouseEnter: true,
+              reverseDirection: false,
+            }}
+            style={{ marginBottom: "20px" }}
+          >
+            {topItems.map((item, i) => (
+              <SwiperSlide key={`top-${i}`} style={slideStyle}>
+                <div
+                  onClick={() => handleBannerClick(item)}
+                  style={{
+                    cursor: "pointer",
+                    width: "100%",
+                    height: "100%",
+                    background: "#1a1a1a",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <img
+                    src={item.image}
+                    alt={`Slide ${i}`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </div>
+              </SwiperSlide>
+            ))}
+          </Swiper>
+        )}
+
+        {/* Нижний слайдер */}
+        {bottomItems.length > 0 && (
+          <Swiper
+            modules={[Autoplay]}
+            spaceBetween={20}
+            slidesPerView="auto"
+            loop={true}
+            speed={1500}
+            autoplay={{
+              delay: 0,
+              disableOnInteraction: false,
+              pauseOnMouseEnter: true,
+              reverseDirection: true,
+            }}
+          >
+            {bottomItems.map((item, i) => (
+              <SwiperSlide key={`bottom-${i}`} style={slideStyle}>
+                <div
+                  onClick={() => handleBannerClick(item)}
+                  style={{
+                    cursor: "pointer",
+                    width: "100%",
+                    height: "100%",
+                    background: "#1a1a1a",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <img
+                    src={item.image}
+                    alt={`Slide ${i}`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </div>
+              </SwiperSlide>
+            ))}
+          </Swiper>
+        )}
+      </div>
+    </>
   );
 }

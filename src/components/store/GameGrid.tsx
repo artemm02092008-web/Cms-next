@@ -1,24 +1,37 @@
-'use client';
+"use client";
 
-import GameCard from './GameCard';
-import { products } from '@/data/products';
+import GameCard from "./GameCard";
 
-export default function GameGrid({ searchQuery }: { searchQuery: string }) {
-  let entries = Object.entries(products);
-
-  if (searchQuery.trim()) {
-    const q = searchQuery.toLowerCase().trim();
-    entries = entries.filter(([_, p]) => 
-      p.title.toLowerCase().includes(q) || 
-      p.genre.toLowerCase().includes(q) ||
-      p.developer.toLowerCase().includes(q)
+export default function GameGrid({
+  games,
+  searchQuery,
+}: {
+  games: any[];
+  searchQuery: string;
+}) {
+  if (!games || !Array.isArray(games)) {
+    return (
+      <p style={{ color: "red" }}>
+        Ошибка: данные не загружены. typeof games = {typeof games}
+      </p>
     );
   }
 
-  if (entries.length === 0) {
+  let filteredGames = games;
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim();
+    filteredGames = filteredGames.filter(
+      (game) =>
+        (game.Title && game.Title.toLowerCase().includes(q)) ||
+        (game.Genre && game.Genre.toLowerCase().includes(q)) ||
+        (game.developer && game.developer.toLowerCase().includes(q))
+    );
+  }
+
+  if (filteredGames.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '50px', color: '#888' }}>
-        <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor" opacity="0.3" style={{ margin: '0 auto 15px' }}><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <div style={{ textAlign: "center", padding: "50px", color: "#888" }}>
         <p>Ничего не найдено по запросу "{searchQuery}"</p>
       </div>
     );
@@ -26,8 +39,8 @@ export default function GameGrid({ searchQuery }: { searchQuery: string }) {
 
   return (
     <div className="games-grid">
-      {entries.map(([gameId, product]) => (
-        <GameCard key={gameId} gameId={gameId} product={product} />
+      {filteredGames.map((game) => (
+        <GameCard key={game.documentId} game={game} />
       ))}
     </div>
   );
