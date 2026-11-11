@@ -1,26 +1,22 @@
-import { getJSON, setJSON, getItem, setItem, removeItem } from './storage';
+import { getItem, setItem, removeItem } from "./storage";
+
+const STRAPI_URL =
+  process.env.NEXT_PUBLIC_STRAPI_URL || "http://127.0.0.1:1337";
 
 export interface User {
   id: string;
   email: string;
   username: string;
-  passwordHash: string;
   createdAt: string;
   avatar: string;
 }
 
-const USERS_KEY = 'ampligame_users';
-const CURRENT_USER_KEY = 'ampligame_current_user';
+const CURRENT_USER_KEY = "ampligame_current_user";
+const JWT_KEY = "ampligame_jwt";
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + '_ampligame_salt_v1');
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
+// ==========================================
+// Получение текущего пользователя
+// ==========================================
 export function getCurrentUser(): User | null {
   const raw = getItem(CURRENT_USER_KEY);
   if (!raw) return null;
@@ -31,85 +27,111 @@ export function getCurrentUser(): User | null {
   }
 }
 
-export function getAllUsers(): User[] {
-  return getJSON<User[]>(USERS_KEY, []);
-}
-
-export function saveAllUsers(users: User[]): void {
-  setJSON(USERS_KEY, users);
-}
-
+// ==========================================
+// Регистрация через Strapi
+// ==========================================
 export async function register(
   email: string,
   username: string,
   password: string
 ): Promise<{ success: boolean; error?: string; user?: User }> {
-  email = email.trim().toLowerCase();
-  username = username.trim();
+  try {
+    const res = await fetch(`${STRAPI_URL}/api/auth/local/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, email, password }),
+    });
 
-  if (email.length < 5 || !email.includes('@')) {
-    return { success: false, error: 'Введите корректный email' };
-  }
-  if (username.length < 3) {
-    return { success: false, error: 'Имя пользователя — минимум 3 символа' };
-  }
-  if (password.length < 6) {
-    return { success: false, error: 'Пароль — минимум 6 символов' };
-  }
+    const data = await res.json();
 
-  const users = getAllUsers();
-  if (users.some((u) => u.email === email)) {
-    return { success: false, error: 'Email уже зарегистрирован' };
-  }
-  if (users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
-    return { success: false, error: 'Имя пользователя занято' };
-  }
+    if (!res.ok) {
+      // Strapi возвращает ошибку в data.error.message
+      return {
+        success: false,
+        error: data.error?.message || "Ошибка регистрации",
+      };
+    }
 
-  const passwordHash = await hashPassword(password);
-  const user: User = {
-    id: 'user_' + Date.now(),
-    email,
-    username,
-    passwordHash,
-    createdAt: new Date().toISOString(),
-    avatar: '/img/default-avatar.svg',
-  };
+    // Strapi возвращает { jwt, user }
+    const user: User = {
+      id: String(data.user.id),
+      email: data.user.email,
+      username: data.user.username,
+      createdAt: data.user.createdAt,
+      avatar: "/img/default-avatar.svg",
+    };
 
-  users.push(user);
-  saveAllUsers(users);
-  setItem(CURRENT_USER_KEY, JSON.stringify(user));
-  return { success: true, user };
+    // Сохраняем JWT и пользователя
+    setItem(JWT_KEY, data.jwt);
+    setItem(CURRENT_USER_KEY, JSON.stringify(user));
+
+    return { success: true, user };
+  } catch (error) {
+    return {
+      success: false,
+      error: "Ошибка сети. Проверьте подключение к Strapi.",
+    };
+  }
 }
 
+// ==========================================
+// Вход через Strapi
+// ==========================================
 export async function login(
   identifier: string,
   password: string
 ): Promise<{ success: boolean; error?: string; user?: User }> {
-  identifier = identifier.trim();
   if (!identifier || !password) {
-    return { success: false, error: 'Заполните все поля' };
+    return { success: false, error: "Заполните все поля" };
   }
 
-  const users = getAllUsers();
-  const user = users.find(
-    (u) =>
-      u.email === identifier.toLowerCase() ||
-      u.username.toLowerCase() === identifier.toLowerCase()
-  );
+  try {
+    const res = await fetch(`${STRAPI_URL}/api/auth/local`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
 
-  if (!user) {
-    return { success: false, error: 'Пользователь не найден' };
+    const data = await res.json();
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.error?.message || "Неверный email или пароль",
+      };
+    }
+
+    const user: User = {
+      id: String(data.user.id),
+      email: data.user.email,
+      username: data.user.username,
+      createdAt: data.user.createdAt,
+      avatar: "/img/default-avatar.svg",
+    };
+
+    setItem(JWT_KEY, data.jwt);
+    setItem(CURRENT_USER_KEY, JSON.stringify(user));
+
+    return { success: true, user };
+  } catch (error) {
+    return {
+      success: false,
+      error: "Ошибка сети. Проверьте подключение к Strapi.",
+    };
   }
-
-  const passwordHash = await hashPassword(password);
-  if (user.passwordHash !== passwordHash) {
-    return { success: false, error: 'Неверный пароль' };
-  }
-
-  setItem(CURRENT_USER_KEY, JSON.stringify(user));
-  return { success: true, user };
 }
 
+// ==========================================
+// Выход
+// ==========================================
 export function logout(): void {
   removeItem(CURRENT_USER_KEY);
+  removeItem(JWT_KEY);
+}
+
+// ==========================================
+// Получение JWT (для защищённых запросов)
+// ==========================================
+export function getJWT(): string | null {
+  return getItem(JWT_KEY);
 }
